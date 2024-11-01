@@ -16,7 +16,7 @@ import "github.com/arslanovdi/otelsarama"
 
 ### Example
 
-[пример использования библиотеки](https://github.com/arslanovdi/otelsarama/tree/main/example)
+[пример использования библиотеки](https://github.com/arslanovdi/otelsarama/tree/master/example)
 
 ### Usage
 

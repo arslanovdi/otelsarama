@@ -30,35 +30,25 @@ type OTelInterceptor struct {
 
 const (
 	otelLibraryName = "github.com/arslanovdi/otelsarama"
-	otelLibraryVer  = "v0.1.0"
+	otelLibraryVer  = "v0.1.1"
 
 	TraceHeaderName   = "trace_id"
 	SpanHeaderName    = "span_id"
 	SampledHeaderName = "sampled"
-
-	ParentTraceID = "parenttraceid"
-	ParentSpanID  = "parentspanid"
-	ParentSampled = "issampled"
+	RetryHeaderName   = "retry"
 )
 
 // shouldIgnoreMsg
 // check for trace attributes to prevent sending trace messages during retries.
 func shouldIgnoreMsg(msg *sarama.ProducerMessage) bool {
-	var traceFound, spanFound, sampledFound bool
+	var retryFound bool
 	for _, h := range msg.Headers {
-		if string(h.Key) == TraceHeaderName {
-			traceFound = true
+		if string(h.Key) == RetryHeaderName {
+			retryFound = true
 			continue
-		}
-		if string(h.Key) == SpanHeaderName {
-			spanFound = true
-			continue
-		}
-		if string(h.Key) == SampledHeaderName {
-			sampledFound = true
 		}
 	}
-	return traceFound && spanFound && sampledFound
+	return retryFound
 }
 
 // Context
@@ -81,11 +71,11 @@ func Context[T sarama.ProducerMessage | sarama.ConsumerMessage](msg *T) context.
 		}
 		for _, h := range m.Headers {
 			switch string(h.Key) {
-			case ParentTraceID:
+			case TraceHeaderName:
 				roottraceid = string(h.Value)
-			case ParentSpanID:
+			case SpanHeaderName:
 				rootspanid = string(h.Value)
-			case ParentSampled:
+			case SampledHeaderName:
 				issampled = trace.FlagsSampled
 			}
 		}
@@ -170,6 +160,7 @@ func (oi *OTelInterceptor) OnSend(msg *sarama.ProducerMessage) {
 	span.SetAttributes(attribute.String("messaging.message.id", spanContext.SpanID().String()))
 
 	setSpanAttributes(spanContext, msg)
+	msg.Headers = append(msg.Headers, sarama.RecordHeader{Key: []byte(RetryHeaderName), Value: []byte("true")})
 }
 
 // OnConsume
@@ -229,11 +220,11 @@ func SetRootSpanContext(ctx context.Context, msg *sarama.ProducerMessage) *saram
 	}
 
 	headers := []sarama.RecordHeader{
-		{Key: []byte(ParentTraceID), Value: []byte(span.SpanContext().TraceID().String())},
-		{Key: []byte(ParentSpanID), Value: []byte(span.SpanContext().SpanID().String())},
+		{Key: []byte(TraceHeaderName), Value: []byte(span.SpanContext().TraceID().String())},
+		{Key: []byte(SpanHeaderName), Value: []byte(span.SpanContext().SpanID().String())},
 	}
 	if span.SpanContext().IsSampled() {
-		headers = append(headers, sarama.RecordHeader{Key: []byte(ParentSampled), Value: []byte("true")})
+		headers = append(headers, sarama.RecordHeader{Key: []byte(SampledHeaderName), Value: []byte("true")})
 	}
 	msg.Headers = append(msg.Headers, headers...)
 
@@ -257,7 +248,7 @@ func setSpanAttributes[T sarama.ProducerMessage | sarama.ConsumerMessage](spanCo
 		noTraceHeaders := m.Headers[:0]
 		for _, h := range m.Headers {
 			key := string(h.Key)
-			if key != TraceHeaderName && key != SpanHeaderName && key != SampledHeaderName && key != ParentTraceID && key != ParentSpanID && key != ParentSampled {
+			if key != TraceHeaderName && key != SpanHeaderName && key != SampledHeaderName && key != RetryHeaderName {
 				noTraceHeaders = append(noTraceHeaders, h)
 			}
 		}
@@ -280,7 +271,7 @@ func setSpanAttributes[T sarama.ProducerMessage | sarama.ConsumerMessage](spanCo
 		noTraceHeaders := m.Headers[:0]
 		for _, h := range m.Headers {
 			key := string(h.Key)
-			if key != TraceHeaderName && key != SpanHeaderName && key != SampledHeaderName && key != ParentTraceID && key != ParentSpanID && key != ParentSampled {
+			if key != TraceHeaderName && key != SpanHeaderName && key != SampledHeaderName && key != RetryHeaderName {
 				noTraceHeaders = append(noTraceHeaders, h)
 			}
 		}

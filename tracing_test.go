@@ -125,11 +125,11 @@ func TestSetRootSpanContext(t *testing.T) {
 		spanid2 := ""
 		for _, h := range msg.Headers {
 			switch string(h.Key) {
-			case ParentTraceID:
+			case TraceHeaderName:
 				traceid2 = string(h.Value)
-			case ParentSpanID:
+			case SpanHeaderName:
 				spanid2 = string(h.Value)
-			case ParentSampled:
+			case SampledHeaderName:
 				sampled = true
 			}
 		}
@@ -162,12 +162,6 @@ func Test_setSpanAttributes(t *testing.T) {
 		spanid2 := ""
 		for _, h := range msg.Headers {
 			switch string(h.Key) {
-			case ParentTraceID:
-				assert.Fail(t, "ParentTraceID should not be set")
-			case ParentSpanID:
-				assert.Fail(t, "ParentSpanID should not be set")
-			case ParentSampled:
-				assert.Fail(t, "ParentSampled should not be set")
 			case TraceHeaderName:
 				traceid2 = string(h.Value)
 			case SpanHeaderName:
@@ -196,12 +190,6 @@ func Test_setSpanAttributes(t *testing.T) {
 		spanid2 := ""
 		for _, h := range msg.Headers {
 			switch string(h.Key) {
-			case ParentTraceID:
-				assert.Fail(t, "ParentTraceID should not be set")
-			case ParentSpanID:
-				assert.Fail(t, "ParentSpanID should not be set")
-			case ParentSampled:
-				assert.Fail(t, "ParentSampled should not be set")
 			case TraceHeaderName:
 				traceid2 = string(h.Value)
 			case SpanHeaderName:
@@ -230,6 +218,8 @@ func Test_shouldIgnoreMsg(t *testing.T) {
 		defer span.End()
 		msg := &sarama.ProducerMessage{}
 		setSpanAttributes(span.SpanContext(), msg)
+		msg.Headers = append(msg.Headers, sarama.RecordHeader{Key: []byte(RetryHeaderName), Value: []byte("true")})
+
 		retry := shouldIgnoreMsg(msg)
 		assert.Equal(t, true, retry)
 	})
