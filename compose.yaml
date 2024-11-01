@@ -1,0 +1,48 @@
+# for integration tests
+services:
+  kafka-test:
+    container_name: kafka-test
+    hostname: kafka-test
+    image: bitnami/kafka:latest
+    restart: unless-stopped
+    ports:
+      - "29092:29092"                                                                      # открываем порт для подключения клиентов, извне контейнера
+    environment:
+      # KAFKA CLUSTER
+      KAFKA_ENABLE_KRAFT: yes
+      KAFKA_CFG_NODE_ID: 1                                                                 # Уникальный идентификатор узла в кластере
+      #KAFKA_KRAFT_CLUSTER_ID: HE5uOlWcSg6jiUydVtaRzQ                                       # Генерируем идентификатор кластера: docker compose exec kafka1 kafka-storage.sh random-uuid
+      KAFKA_CFG_PROCESS_ROLES: broker,controller                                           # узел может входить в кворум как контроллер и как брокер
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-test:9093                                    # список нод, для кворума (здесь нужно перечислить адреса всех известных контроллеров)
+      # LISTENERS
+      KAFKA_CFG_LISTENERS: INTERNAL://:9091,CONTROLLER://:9093,EXTERNAL://:29092           # публикуем порты на которые брокер будет принимать сообщения
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://:9091,EXTERNAL://127.0.0.1:29092          # публикуем порты для подключения клиентов
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT   # разрешаем доступ без шифрования и авторизации
+      # BROKER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL                                       # название слушателя для брокера
+      # CONTROLLER
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER                                      # название слушателя для контроллера
+      # CLIENT
+      KAFKA_CLIENT_LISTENER_NAME: EXTERNAL                                                 # название слушателя для клиента
+      # COMMON SETTIGNS
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true                                           # разрешаем автоматическое создание топиков
+      #ALLOW_PLAINTEXT_LISTENER: yes
+
+    networks:
+      - testlan
+    volumes:
+      - kafka-test-data:/bitnami/kafka
+    healthcheck:
+      # проверка состояния контейнера. проверка происходит по готовности порта 9091
+      test: "bash -c 'printf \"\" > /dev/tcp/127.0.0.1/9091; exit $$?;'"
+      interval: 5s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+volumes:
+  kafka-test-data:
+    driver: local
+
+networks:
+  testlan:
+    driver: bridge
