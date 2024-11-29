@@ -12,6 +12,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
@@ -49,7 +50,11 @@ func TestMain(m *testing.M) {
 
 	otel.SetTracerProvider(provider)
 
-	defer provider.Shutdown(context.Background())
+	defer func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			slog.Error("Failed to shutdown trace provider", slog.String("error", err.Error()))
+		}
+	}()
 
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
@@ -94,7 +99,7 @@ func TestContext(t *testing.T) {
 	})
 	t.Run("msg == sarama.ConsumerMessage with span Headers", func(t *testing.T) {
 		t.Parallel()
-		ctx, span := tracer.Start(context.Background(), "span name in test") // сгенерировали span
+		_, span := tracer.Start(context.Background(), "span name in test") // сгенерировали span
 		defer span.End()
 		traceId := span.SpanContext().TraceID().String()
 		spanId := span.SpanContext().SpanID().String()
@@ -102,7 +107,7 @@ func TestContext(t *testing.T) {
 		msg := &sarama.ConsumerMessage{}
 		setSpanAttributes(span.SpanContext(), msg) // привязали span к msg
 
-		ctx = Context(msg) // вытаскивлем span из msg
+		ctx := Context(msg) // вытаскивлем span из msg
 		assert.Equal(t, traceId, trace.SpanFromContext(ctx).SpanContext().TraceID().String())
 		assert.Equal(t, spanId, trace.SpanFromContext(ctx).SpanContext().SpanID().String())
 	})

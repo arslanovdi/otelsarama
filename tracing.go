@@ -6,7 +6,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"log/slog"
 	"reflect"
 	"strconv"
 )
@@ -23,6 +22,8 @@ import (
 // General Attributes 15.10.2024
 // https://github.com/open-telemetry/semantic-conventions/blob/main/docs/general/attributes.md#general-remote-service-attributes @d5d2b9d
 
+// OTelInterceptor
+// implements the sarama.ProducerInterceptor and sarama.ConsumerInterceptor interface for OpenTelemetry tracing.
 type OTelInterceptor struct {
 	tracer     trace.Tracer
 	fixedAttrs []attribute.KeyValue
@@ -145,13 +146,11 @@ func (oi *OTelInterceptor) OnSend(msg *sarama.ProducerMessage) {
 		if len(key) > 0 { //  If the key is null, the attribute MUST NOT be set
 			attWithTopic = append(attWithTopic, attribute.String("messaging.kafka.message.key", string(key)))
 		}
-	} else {
-		slog.Debug("key encoding error", slog.String("error", err.Error()))
 	}
 
 	_, span := oi.tracer.Start(
 		Context(msg),
-		msg.Topic,
+		"send "+msg.Topic,
 		trace.WithAttributes(attWithTopic...))
 
 	defer span.End()
@@ -183,7 +182,7 @@ func (oi *OTelInterceptor) OnConsume(msg *sarama.ConsumerMessage) {
 
 	_, span := oi.tracer.Start(
 		Context(msg),
-		msg.Topic,
+		"poll "+msg.Topic,
 		trace.WithAttributes(attWithTopic...))
 	defer span.End()
 	spanContext := span.SpanContext()
@@ -215,7 +214,7 @@ func SetRootSpanContext(ctx context.Context, msg *sarama.ProducerMessage) *saram
 
 	span := trace.SpanFromContext(ctx)
 
-	if span.SpanContext().HasTraceID() == false {
+	if !span.SpanContext().HasTraceID() {
 		return msg
 	}
 

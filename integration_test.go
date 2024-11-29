@@ -17,6 +17,8 @@ import (
 var brokers = []string{"127.0.0.1:29092"}
 var duration = 1 * time.Second // время ожидания отправки сообщения в буфер провайдером OpenTelemetry
 
+const someheader = "SomeHeaderName"
+
 func TestOTelInterceptor_OnSend(t *testing.T) {
 	buf.Reset()
 	// Connect to kafka
@@ -76,7 +78,7 @@ func TestOTelInterceptor_OnConsume(t *testing.T) {
 	ctx, span := tracer.Start(context.Background(), "root span name in test") // сгенерировали span
 	traceId := span.SpanContext().TraceID().String()
 
-	// Создание консьюмера Kafka
+	// Создание консюмера Kafka
 	consumerConfig := sarama.NewConfig()
 	oiconsume := NewOTelInterceptor("test service")
 	consumerConfig.Consumer.Interceptors = []sarama.ConsumerInterceptor{oiconsume}
@@ -101,7 +103,21 @@ func TestOTelInterceptor_OnConsume(t *testing.T) {
 	go func() {
 		wg.Add(1)
 
-		_, _ = <-partConsumer.Messages() // ожидаем получения сообщения
+		msg, ok := <-partConsumer.Messages() // ожидаем получения сообщения
+		if !ok {
+			assert.Fail(t, "Failed to consume message")
+		}
+
+		someHeader := false
+
+		for _, h := range msg.Headers {
+			switch string(h.Key) {
+			case someheader:
+				someHeader = true
+			}
+		}
+
+		assert.True(t, someHeader) // Checking the transfer of headers from producer to consumer
 
 		time.Sleep(duration) // waiting for OpenTelemetry provider send tracing on consume message
 
@@ -146,6 +162,8 @@ func TestOTelInterceptor_OnConsume(t *testing.T) {
 		Key:   sarama.StringEncoder("test key"),
 		Value: sarama.StringEncoder("test value"),
 	}
+
+	msg.Headers = append(msg.Headers, sarama.RecordHeader{Key: []byte(someheader), Value: []byte("true")})
 
 	msg = SetRootSpanContext(ctx, msg)
 	_, _, err = kafka.SendMessage(msg)

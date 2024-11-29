@@ -134,7 +134,7 @@ loop:
 		slog.Warn("Failed to close kafka producer", slog.String("error", err.Error()))
 	}
 
-	OTeltracer.Shutdown(context.TODO())
+	err = OTeltracer.Shutdown(context.TODO())
 	if err != nil {
 		slog.Warn("tracer shutdown error", slog.String("error", err.Error()))
 	}
