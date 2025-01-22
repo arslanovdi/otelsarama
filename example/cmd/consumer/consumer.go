@@ -3,15 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
+	"time"
+
 	"github.com/IBM/sarama"
 	"github.com/arslanovdi/otelsarama"
 	"github.com/arslanovdi/otelsarama/example/tracer"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"log/slog"
-	"os"
-	"time"
 )
 
 const (
@@ -29,9 +30,9 @@ const loglevel = slog.LevelDebug
 
 type Consumer struct{}
 
-func (consumer Consumer) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
-func (consumer Consumer) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
-func (consumer Consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+func (c Consumer) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
+func (c Consumer) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
+func (c Consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		// process the message
 		fmt.Printf("Message topic:%q partition:%d offset:%d key:%s value:%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
@@ -44,7 +45,6 @@ func (consumer Consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sa
 }
 
 func otherService(ctx context.Context) {
-
 	t := otel.GetTracerProvider().Tracer("other service")
 	_, span := t.Start(
 		ctx,
@@ -52,7 +52,7 @@ func otherService(ctx context.Context) {
 		trace.WithAttributes(
 			attribute.String("messaging.other.service.name", "other service")),
 	)
-	defer span.End()
+	span.End()
 }
 
 func main() {
@@ -60,16 +60,17 @@ func main() {
 		slog.New(slog.NewJSONHandler(
 			os.Stderr,
 			&slog.HandlerOptions{
-				Level: loglevel})))
+				Level: loglevel,
+			})))
 
-	OTeltracer, err := tracer.NewTracer(context.TODO(), servicename)
+	oTeltracer, err := tracer.NewTracer(context.TODO(), servicename)
 	if err != nil {
 		panic(err)
 	}
 	defer func() {
-		err := OTeltracer.Shutdown(context.TODO())
-		if err != nil {
-			slog.Warn("tracer shutdown error", slog.String("error", err.Error()))
+		err1 := oTeltracer.Shutdown(context.TODO())
+		if err1 != nil {
+			slog.Warn("tracer shutdown error", slog.String("error", err1.Error()))
 		}
 	}()
 
@@ -80,7 +81,6 @@ func main() {
 	kafkaConfig.Consumer.Offsets.AutoCommit.Interval = 1 * time.Second
 
 	consumerGroup, err := sarama.NewConsumerGroup(brokers, kafkaGroup, kafkaConfig)
-
 	if err != nil {
 		slog.Warn("Failed to create kafka consumer group", slog.String("error", err.Error()))
 		os.Exit(1)
@@ -90,11 +90,9 @@ func main() {
 
 	for {
 		err := consumerGroup.Consume(context.TODO(), []string{kafkaTopic}, consumer)
-
 		if err != nil {
 			slog.Warn("Failed to consume kafka topic", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
 	}
-
 }
