@@ -3,6 +3,7 @@ package tracer
 import (
 	"context"
 	"errors"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
@@ -23,7 +24,6 @@ type Tracer struct {
 
 // NewTracer инициализация экспортера и провайдера OpenTelemetry трассировки
 func NewTracer(ctx context.Context, servicename string) (*Tracer, error) {
-
 	exporter, err := otlptracegrpc.New( // grpc экспортер
 		ctx,
 		otlptracegrpc.WithInsecure(),
@@ -42,9 +42,8 @@ func NewTracer(ctx context.Context, servicename string) (*Tracer, error) {
 		),
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithSampler(
+
 			sdktrace.AlwaysSample(),
-			//sdktrace.ParentBased(sdktrace.TraceIDRatioBased(0.2)), // 20% сэмплируем
-			//sdktrace.NeverSample(),
 		),
 	)
 
@@ -60,7 +59,6 @@ func NewTracer(ctx context.Context, servicename string) (*Tracer, error) {
 
 // Shutdown shuts down the trace exporter and trace provider.
 func (t *Tracer) Shutdown(ctx context.Context) error {
-
 	// Shutdown the trace provider.
 	err := t.provider.Shutdown(ctx)
 

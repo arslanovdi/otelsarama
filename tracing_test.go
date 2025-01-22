@@ -3,6 +3,11 @@ package otelsarama
 import (
 	"bytes"
 	"context"
+	"log/slog"
+	"os"
+	"testing"
+	"time"
+
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
@@ -10,12 +15,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/semconv/v1.27.0"
 	"go.opentelemetry.io/otel/trace"
-	"log/slog"
-	"os"
-	"testing"
-	"time"
 )
 
 var tracer = otel.GetTracerProvider().Tracer(
@@ -26,12 +27,10 @@ var tracer = otel.GetTracerProvider().Tracer(
 var buf bytes.Buffer // буфер для вывода трэйсинга
 
 func TestMain(m *testing.M) {
-
 	exporter, err := stdouttrace.New(
 		stdouttrace.WithPrettyPrint(),
 		stdouttrace.WithWriter(&buf),
 	)
-
 	if err != nil {
 		os.Exit(1)
 	}
@@ -178,7 +177,6 @@ func Test_setSpanAttributes(t *testing.T) {
 		assert.Equal(t, traceId, traceid2)
 		assert.Equal(t, spanId, spanid2)
 		assert.Equal(t, sampled, span.SpanContext().IsSampled())
-
 	})
 	t.Run("consumermessage", func(t *testing.T) {
 		_, span := tracer.Start(context.Background(), "span name in test") // сгенерировали span
@@ -206,7 +204,6 @@ func Test_setSpanAttributes(t *testing.T) {
 		assert.Equal(t, traceId, traceid2)
 		assert.Equal(t, spanId, spanid2)
 		assert.Equal(t, sampled, span.SpanContext().IsSampled())
-
 	})
 	buf.Reset()
 }
@@ -216,7 +213,7 @@ func Test_shouldIgnoreMsg(t *testing.T) {
 	t.Run("msg without span", func(t *testing.T) {
 		msg := &sarama.ProducerMessage{}
 		retry := shouldIgnoreMsg(msg)
-		assert.Equal(t, false, retry)
+		assert.False(t, retry)
 	})
 	t.Run("msg with span", func(t *testing.T) {
 		_, span := tracer.Start(context.Background(), "span name in test") // сгенерировали span
@@ -226,7 +223,7 @@ func Test_shouldIgnoreMsg(t *testing.T) {
 		msg.Headers = append(msg.Headers, sarama.RecordHeader{Key: []byte(RetryHeaderName), Value: []byte("true")})
 
 		retry := shouldIgnoreMsg(msg)
-		assert.Equal(t, true, retry)
+		assert.True(t, retry)
 	})
 	buf.Reset()
 }

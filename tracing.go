@@ -2,12 +2,14 @@ package otelsarama
 
 import (
 	"context"
+	"reflect"
+	"strconv"
+
 	"github.com/IBM/sarama"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 	"go.opentelemetry.io/otel/trace"
-	"reflect"
-	"strconv"
 )
 
 // These based on OpenTelemetry API & SDKs for go
@@ -101,7 +103,7 @@ func Context[T sarama.ProducerMessage | sarama.ConsumerMessage](msg *T) context.
 		return ctx
 	}
 
-	if len(roottraceid) == 0 || len(rootspanid) == 0 {
+	if roottraceid == "" || rootspanid == "" {
 		return ctx
 	}
 
@@ -133,18 +135,21 @@ func (oi *OTelInterceptor) OnSend(msg *sarama.ProducerMessage) {
 		return
 	}
 
-	attWithTopic := append(
-		oi.fixedAttrs,
-		attribute.String("messaging.destination.name", msg.Topic),
-		attribute.String("messaging.destination.partition.id", strconv.FormatInt(int64(msg.Partition), 10)),
-		attribute.String("messaging.operation.name", "send"),
-		attribute.String("messaging.operation.type", "send"),
+	var attWithTopic []attribute.KeyValue
+	copy(attWithTopic, oi.fixedAttrs)
+
+	attWithTopic = append(
+		attWithTopic,
+		semconv.MessagingDestinationName(msg.Topic),                                          // messaging.destination.name
+		semconv.MessagingDestinationPartitionID(strconv.FormatInt(int64(msg.Partition), 10)), // messaging.destination.partition.id
+		semconv.MessagingOperationName("send"),                                               // messaging.operation.name
+		semconv.MessagingOperationTypeKey.String("send"),                                     // messaging.operation.type = send
 	)
 
 	key, err := msg.Key.Encode()
 	if err == nil {
 		if len(key) > 0 { //  If the key is null, the attribute MUST NOT be set
-			attWithTopic = append(attWithTopic, attribute.String("messaging.kafka.message.key", string(key)))
+			attWithTopic = append(attWithTopic, semconv.MessagingKafkaMessageKey(string(key))) // messaging.kafka.message.key
 		}
 	}
 
@@ -156,7 +161,7 @@ func (oi *OTelInterceptor) OnSend(msg *sarama.ProducerMessage) {
 	defer span.End()
 	spanContext := span.SpanContext()
 
-	span.SetAttributes(attribute.String("messaging.message.id", spanContext.SpanID().String()))
+	span.SetAttributes(semconv.MessagingMessageID(spanContext.SpanID().String())) // messaging.message.id
 
 	setSpanAttributes(spanContext, msg)
 	msg.Headers = append(msg.Headers, sarama.RecordHeader{Key: []byte(RetryHeaderName), Value: []byte("true")})
@@ -165,19 +170,21 @@ func (oi *OTelInterceptor) OnSend(msg *sarama.ProducerMessage) {
 // OnConsume
 // tracing consumer message.
 func (oi *OTelInterceptor) OnConsume(msg *sarama.ConsumerMessage) {
+	var attWithTopic []attribute.KeyValue
+	copy(attWithTopic, oi.fixedAttrs)
 
-	attWithTopic := append(
-		oi.fixedAttrs,
-		attribute.String("messaging.destination.name", msg.Topic),
-		///attribute.String("messaging.consumer.group.name", "my-group"),
-		attribute.String("messaging.destination.partition.id", strconv.FormatInt(int64(msg.Partition), 10)),
-		attribute.String("messaging.operation.name", "poll"),
-		attribute.String("messaging.operation.type", "receive"),
-		attribute.String("messaging.kafka.message.offset", strconv.FormatInt(msg.Offset, 10)),
+	attWithTopic = append(
+		attWithTopic,
+		semconv.MessagingDestinationName(msg.Topic), // messaging.destination.name
+		// semconv.MessagingConsumerGroupName("my-group"),	// messaging.consumer.group.name
+		semconv.MessagingDestinationPartitionID(strconv.FormatInt(int64(msg.Partition), 10)), // messaging.destination.partition.id
+		semconv.MessagingOperationName("poll"),                                               // messaging.operation.name
+		semconv.MessagingOperationTypeReceive,                                                // messaging.operation.type = receive
+		semconv.MessagingKafkaOffset(int(msg.Offset)),                                        // messaging.kafka.offset
 	)
 
 	if len(msg.Key) > 0 { //  If the key is null, the attribute MUST NOT be set
-		attWithTopic = append(attWithTopic, attribute.String("messaging.kafka.message.key", string(msg.Key)))
+		attWithTopic = append(attWithTopic, semconv.MessagingKafkaMessageKey(string(msg.Key))) // messaging.kafka.message.key
 	}
 
 	_, span := oi.tracer.Start(
@@ -187,7 +194,7 @@ func (oi *OTelInterceptor) OnConsume(msg *sarama.ConsumerMessage) {
 	defer span.End()
 	spanContext := span.SpanContext()
 
-	span.SetAttributes(attribute.String("messaging.message.id", spanContext.SpanID().String()))
+	span.SetAttributes(semconv.MessagingMessageID(spanContext.SpanID().String())) // messaging.message.id
 
 	setSpanAttributes(spanContext, msg)
 }
@@ -196,13 +203,12 @@ func (oi *OTelInterceptor) OnConsume(msg *sarama.ConsumerMessage) {
 // Global TraceProvider must be registered.
 // instance - unique identifier of the service instance.
 func NewOTelInterceptor(instance string) *OTelInterceptor {
-
 	oi := OTelInterceptor{}
 	oi.tracer = otel.GetTracerProvider().Tracer(otelLibraryName, trace.WithInstrumentationVersion(otelLibraryVer))
 
 	oi.fixedAttrs = []attribute.KeyValue{
-		attribute.String("messaging.client.id", instance),
-		attribute.String("messaging.system", "kafka"),
+		semconv.MessagingClientID(instance), // messaging.client.id
+		semconv.MessagingSystemKafka,        // messaging.system set kafka
 	}
 
 	return &oi
@@ -211,7 +217,6 @@ func NewOTelInterceptor(instance string) *OTelInterceptor {
 // SetRootSpanContext
 // Integrates into producer message root span from context if it exists.
 func SetRootSpanContext(ctx context.Context, msg *sarama.ProducerMessage) *sarama.ProducerMessage {
-
 	span := trace.SpanFromContext(ctx)
 
 	if !span.SpanContext().HasTraceID() {
